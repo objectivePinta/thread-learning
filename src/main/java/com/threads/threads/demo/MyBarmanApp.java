@@ -104,15 +104,31 @@ public class MyBarmanApp implements CommandLineRunner {
         ForkJoinPool numbersPool = new ForkJoinPool();
 
         SomeRandomNumber someRandomNumber = new SomeRandomNumber();
-        CompletableFuture.supplyAsync(someRandomNumber::call)
-                .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool),(x, y) -> {
+        CompletableFuture.supplyAsync(someRandomNumber::call).exceptionally(MyBarmanApp::recover)
+                .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool)
+                        .exceptionally(MyBarmanApp::recover),(x, y) -> {
             long suma = x + y;
             log.info("suma="+ suma);
             return suma;
         }).exceptionally(throwable -> {
             log.info(throwable.getMessage());
-            return null;
+                    //recover
+            if (throwable instanceof IllegalStateException) {
+                Random random = new Random();
+                return random.nextLong(1, 100);
+            } else {
+                return null;
+            }
                 });
+    }
+
+    private static long recover(Throwable t) {
+        if (t.getCause() instanceof IllegalStateException) {
+            Random random = new Random();
+            return random.nextLong(1, 100);
+        } else {
+            throw new RuntimeException(t);
+        }
     }
 
     void pay(String what) {
