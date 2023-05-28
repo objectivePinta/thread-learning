@@ -9,6 +9,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
+import org.springframework.core.task.TaskDecorator;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.Random;
 import java.util.concurrent.*;
@@ -24,6 +28,7 @@ import static com.threads.threads.demo.ConcurrencyUtil.sleepq;
         HibernateJpaAutoConfiguration.class
 })
 @Slf4j
+@EnableAsync
 public class MyBarmanApp implements CommandLineRunner {
     public static void main(String[] args) {
         SpringApplication.run(MyBarmanApp.class, args)
@@ -53,6 +58,29 @@ public class MyBarmanApp implements CommandLineRunner {
                 new ArrayBlockingQueue<>(2),
                 new ThreadPoolExecutor.DiscardOldestPolicy()
         );
+        ThreadPoolTaskExecutor threadPoolTaskExecutor = new ThreadPoolTaskExecutor();
+        threadPoolTaskExecutor.setCorePoolSize(4);
+        threadPoolTaskExecutor.setTaskDecorator(new TaskDecorator() {
+            @Override
+            public Runnable decorate(Runnable original) {
+                //this is still on main thread
+                long t0 = System.currentTimeMillis();
+                return () -> {
+                    long t1 = System.currentTimeMillis();
+                    // time waiting in queue
+                    log.info("XXXX {} seconds on thread {}", (t1-t0)/1000, Thread.currentThread().getName());
+                    original.run();
+                };
+            }
+        });
+        threadPoolTaskExecutor.initialize();
+
+        IntStream.range(1, 1000).forEach(idx -> {
+            threadPoolTaskExecutor.submit(() -> {
+                sleepq(500);
+                log.info("#### I'm here:"+Thread.currentThread().getName());
+            });
+        });
 
         long start = System.currentTimeMillis();
         IntStream.range(1, 17).forEach(idx ->
@@ -70,7 +98,7 @@ public class MyBarmanApp implements CommandLineRunner {
         log.info("Am terminat:" + total);
         pool.shutdown();
         completableFuture(pool, myBarman);
-        combineNumbers();
+        combineNumbers().thenAccept(it -> log.info("Exiting the Async with result:"+ it));
         pool.awaitTermination(2000, TimeUnit.SECONDS);
 
     }
@@ -100,11 +128,18 @@ public class MyBarmanApp implements CommandLineRunner {
         // execute a c
     }
 
-    public void combineNumbers() {
+    @Async
+    //@Async methods are run by spring on a different thread
+    public CompletableFuture<Long> combineNumbers() {
+        log.info("@Async is running on thread:"+Thread.currentThread().getName());
+        /*
+        FJP = a thread pool optimized for divide et impera tasks
+        - resubmitting new tasks back
+         */
         ForkJoinPool numbersPool = new ForkJoinPool();
 
         SomeRandomNumber someRandomNumber = new SomeRandomNumber();
-        CompletableFuture.supplyAsync(someRandomNumber::call).exceptionally(MyBarmanApp::recover)
+       return CompletableFuture.supplyAsync(someRandomNumber::call).exceptionally(MyBarmanApp::recover)
                 .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool)
                         .exceptionally(MyBarmanApp::recover),(x, y) -> {
             long suma = x + y;
@@ -146,7 +181,7 @@ class MyTask implements Callable<Integer> {
     }
 
     @Override
-    public Integer call() throws Exception {
+    public Integer call() {
         log.info("Thread #"+Thread.currentThread().getName()+"...Task number #"+atomicLong.incrementAndGet()+"...Current number of tasks on the queue...."+threadPoolExecutor.getQueue().size());
         sleepq(500);
         log.info(Thread.currentThread().getName()+"...doing the task");
