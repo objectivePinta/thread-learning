@@ -109,7 +109,10 @@ public class MyBarmanApp implements CommandLineRunner {
             long suma = x + y;
             log.info("suma="+ suma);
             return suma;
-        });
+        }).exceptionally(throwable -> {
+            log.info(throwable.getMessage());
+            return null;
+                });
     }
 
     void pay(String what) {
@@ -198,6 +201,7 @@ class SomeRandomNumber implements Callable<Long> {
             log.info("Took:"+start);
         } else {
             start = System.currentTimeMillis();
+            throw new IllegalStateException("No more numbers");
         }
         return nextLong;
     }
