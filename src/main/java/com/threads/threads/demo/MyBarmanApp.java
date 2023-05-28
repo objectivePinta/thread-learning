@@ -1,6 +1,7 @@
 package com.threads.threads.demo;
 
 import lombok.Data;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -9,6 +10,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 
+import java.util.Random;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
@@ -30,6 +32,15 @@ public class MyBarmanApp implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        /* The optimal number of running threads is equal with the number of logical CPU cores
+        *  if there are more threads than cores,
+        *  the threads will fight over the cpu core (thread contention, lots of context switching).
+        *  The analogy with having 4 shovels and asking how many workers should you hire if you have 4 shovels?
+        *
+        * Formula for number of threads = no of cpus / (1 - blocking factor) - Goetz & Subramian
+        * eg. bf = 0.8 => 8 / 1 - 0.8 = 8 * 2 = 16
+        *  */
+        log.info("available processors:"+Runtime.getRuntime().availableProcessors());
         MyBarman myBarman = new MyBarman();
         ExecutorService pool = Executors.newFixedThreadPool(2);
 
@@ -58,7 +69,51 @@ public class MyBarmanApp implements CommandLineRunner {
         long total = System.currentTimeMillis() - start;
         log.info("Am terminat:" + total);
         pool.shutdown();
+        completableFuture(pool, myBarman);
+        combineNumbers();
         pool.awaitTermination(2000, TimeUnit.SECONDS);
+
+    }
+
+
+    public void completableFuture(ExecutorService pool, MyBarman myBarman) throws ExecutionException, InterruptedException {
+        /*
+        CF allows to create asyncronous flows that we program and leave to run by themselves
+         */
+        log.info("Entered completable future world");
+        CompletableFuture<Void> payForDrinks = CompletableFuture.runAsync(() -> pay("Drinks"));
+        CompletableFuture<Vodka> vodkaFuture = CompletableFuture.supplyAsync(myBarman::pourVodka)
+                .thenApply(vodka -> {System.out.println("Add ice # # #"); return vodka;});
+        CompletableFuture<Beer> beerCompletableFuture = CompletableFuture.supplyAsync(myBarman::pourDarkBeer);
+
+        CompletableFuture<Beer> paidBeer = payForDrinks.thenApply(v -> myBarman.pourBlondBeer());
+        CompletableFuture<Vodka> paidVodka = payForDrinks.thenApply(v -> myBarman.pourVodka());
+
+        CompletableFuture<Dilly> futureDilly = vodkaFuture.thenCombine(beerCompletableFuture, (vodka,beer) -> {
+            return new Dilly(vodka, beer);
+        });
+        futureDilly.thenAccept(dilly -> log.info(dilly.toString()));
+        log.info("Exiting completable future world");
+
+        /* it uses an internal common pool*/
+        Vodka vodka = vodkaFuture.get(); // don't get on CompletableFuture
+        // execute a c
+    }
+
+    public void combineNumbers() {
+        ForkJoinPool numbersPool = new ForkJoinPool();
+
+        SomeRandomNumber someRandomNumber = new SomeRandomNumber();
+        CompletableFuture.supplyAsync(someRandomNumber::call)
+                .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool),(x, y) -> {
+            long suma = x + y;
+            log.info("suma="+ suma);
+            return suma;
+        });
+    }
+
+    void pay(String what) {
+    log.info("You're paying for "+ what);
     }
 }
 @Slf4j
@@ -113,3 +168,37 @@ class Vodka {
     private final String type = "stalinskaya";
 }
 
+@Value
+@Slf4j
+class Dilly {
+    Vodka vodka;
+    Beer beer;
+
+    public Dilly(Vodka vodka, Beer beer) {
+        log.info("Mixing Dilly Dilly");
+        sleepq(1000);
+        this.vodka = vodka;
+        this.beer = beer;
+    }
+}
+@Slf4j
+class SomeRandomNumber implements Callable<Long> {
+    public static long start = 0;
+    @Override
+    public Long call()  {
+
+
+        Random random = new Random();
+        long nextLong = random.nextLong(1, 100);
+        log.info("### thread:"+Thread.currentThread().getName()+" will return:"+nextLong);
+        sleepq(1500);
+        if (start != 0) {
+            long next = start;
+            start = System.currentTimeMillis() - next;
+            log.info("Took:"+start);
+        } else {
+            start = System.currentTimeMillis();
+        }
+        return nextLong;
+    }
+}
