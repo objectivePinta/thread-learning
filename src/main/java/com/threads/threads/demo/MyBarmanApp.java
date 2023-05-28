@@ -1,18 +1,17 @@
 package com.threads.threads.demo;
 
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Service;
 
 import java.util.Random;
 import java.util.concurrent.*;
@@ -22,21 +21,25 @@ import java.util.stream.IntStream;
 import static com.threads.threads.demo.ConcurrencyUtil.sleepq;
 
 
-@SpringBootApplication(exclude = {
-        DataSourceAutoConfiguration.class,
-        DataSourceTransactionManagerAutoConfiguration.class,
-        HibernateJpaAutoConfiguration.class
-})
+@SpringBootApplication
 @Slf4j
 @EnableAsync
+@RequiredArgsConstructor
 public class MyBarmanApp implements CommandLineRunner {
+
+    private final NumberGenerator numberGenerator;
+
     public static void main(String[] args) {
-        SpringApplication.run(MyBarmanApp.class, args)
-        ; // Note: .close to stop executors after CLRunner finishes
+        SpringApplication.run(MyBarmanApp.class, args); // Note: .close to stop executors after CLRunner finishes
     }
 
     @Override
     public void run(String... args) throws Exception {
+
+        //Check @Async is not running on main
+        //c.threads.threads.demo.NumberGenerator   : @Async is running on thread:task-1
+        numberGenerator.combineNumbers();
+
         /* The optimal number of running threads is equal with the number of logical CPU cores
         *  if there are more threads than cores,
         *  the threads will fight over the cpu core (thread contention, lots of context switching).
@@ -75,7 +78,7 @@ public class MyBarmanApp implements CommandLineRunner {
         });
         threadPoolTaskExecutor.initialize();
 
-        IntStream.range(1, 1000).forEach(idx -> {
+        IntStream.range(1, 5).forEach(idx -> {
             threadPoolTaskExecutor.submit(() -> {
                 sleepq(500);
                 log.info("#### I'm here:"+Thread.currentThread().getName());
@@ -98,7 +101,6 @@ public class MyBarmanApp implements CommandLineRunner {
         log.info("Am terminat:" + total);
         pool.shutdown();
         completableFuture(pool, myBarman);
-        combineNumbers().thenAccept(it -> log.info("Exiting the Async with result:"+ it));
         pool.awaitTermination(2000, TimeUnit.SECONDS);
 
     }
@@ -128,43 +130,6 @@ public class MyBarmanApp implements CommandLineRunner {
         // execute a c
     }
 
-    @Async
-    //@Async methods are run by spring on a different thread
-    public CompletableFuture<Long> combineNumbers() {
-        log.info("@Async is running on thread:"+Thread.currentThread().getName());
-        /*
-        FJP = a thread pool optimized for divide et impera tasks
-        - resubmitting new tasks back
-         */
-        ForkJoinPool numbersPool = new ForkJoinPool();
-
-        SomeRandomNumber someRandomNumber = new SomeRandomNumber();
-       return CompletableFuture.supplyAsync(someRandomNumber::call).exceptionally(MyBarmanApp::recover)
-                .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool)
-                        .exceptionally(MyBarmanApp::recover),(x, y) -> {
-            long suma = x + y;
-            log.info("suma="+ suma);
-            return suma;
-        }).exceptionally(throwable -> {
-            log.info(throwable.getMessage());
-                    //recover
-            if (throwable instanceof IllegalStateException) {
-                Random random = new Random();
-                return random.nextLong(1, 100);
-            } else {
-                return null;
-            }
-                });
-    }
-
-    private static long recover(Throwable t) {
-        if (t.getCause() instanceof IllegalStateException) {
-            Random random = new Random();
-            return random.nextLong(1, 100);
-        } else {
-            throw new RuntimeException(t);
-        }
-    }
 
     void pay(String what) {
     log.info("You're paying for "+ what);
@@ -189,29 +154,6 @@ class MyTask implements Callable<Integer> {
     }
 }
 
-@Slf4j
-class MyBarman {
-    public Beer pourBlondBeer() {
-
-        sleepq(1000);
-        log.info("End pouring");
-        return new Beer();
-    }
-
-    public Beer pourDarkBeer() {
-        log.info("Torn bere to ");// + requestContext.getCurrentUser()+"...");
-        sleepq(1000); // imagine network call HTTP
-        log.info("sfarsit pouring");
-        return new Beer();
-    }
-
-    public Vodka pourVodka() {
-        log.info("Torn Vodka...");
-        sleepq(900); // JDBC call/ cassard
-        return new Vodka();
-    }
-}
-
 @Data
 class Beer {
     private final String type = "beer";
@@ -222,19 +164,6 @@ class Vodka {
     private final String type = "stalinskaya";
 }
 
-@Value
-@Slf4j
-class Dilly {
-    Vodka vodka;
-    Beer beer;
-
-    public Dilly(Vodka vodka, Beer beer) {
-        log.info("Mixing Dilly Dilly");
-        sleepq(1000);
-        this.vodka = vodka;
-        this.beer = beer;
-    }
-}
 @Slf4j
 class SomeRandomNumber implements Callable<Long> {
     public static long start = 0;
@@ -255,5 +184,51 @@ class SomeRandomNumber implements Callable<Long> {
             throw new IllegalStateException("No more numbers");
         }
         return nextLong;
+    }
+}
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+class NumberGenerator{
+
+
+        @Async
+        //@Async methods are run by spring on a different thread
+        public CompletableFuture<Long> combineNumbers() {
+
+            log.info("@Async is running on thread:"+Thread.currentThread().getName());
+        /*
+        FJP = a thread pool optimized for divide et impera tasks
+        - resubmitting new tasks back
+         */
+            ForkJoinPool numbersPool = new ForkJoinPool();
+            SomeRandomNumber someRandomNumber = new SomeRandomNumber();
+            return CompletableFuture.supplyAsync(someRandomNumber::call).exceptionally(NumberGenerator::recover)
+                    .thenCombine(CompletableFuture.supplyAsync(someRandomNumber::call,numbersPool)
+                            .exceptionally(NumberGenerator::recover),(x, y) -> {
+                        long suma = x + y;
+                        log.info("suma="+ suma);
+                        return suma;
+                    }).exceptionally(throwable -> {
+                        log.info(throwable.getMessage());
+                        //recover
+                        if (throwable instanceof IllegalStateException) {
+                            Random random = new Random();
+                            return random.nextLong(1, 100);
+                        } else {
+                            return null;
+                        }
+                    });
+        }
+
+
+    private static long recover(Throwable t) {
+        if (t.getCause() instanceof IllegalStateException) {
+            Random random = new Random();
+            return random.nextLong(1, 100);
+        } else {
+            throw new RuntimeException(t);
+        }
     }
 }
