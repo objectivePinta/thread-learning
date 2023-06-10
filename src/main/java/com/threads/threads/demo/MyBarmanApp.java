@@ -4,9 +4,13 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.CustomScopeConfigurer;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.support.SimpleThreadScope;
 import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -33,6 +37,17 @@ public class MyBarmanApp implements CommandLineRunner {
         SpringApplication.run(MyBarmanApp.class, args); // Note: .close to stop executors after CLRunner finishes
     }
 
+
+    @Autowired
+    MyBarman myBarman;
+
+    @Bean
+    public static CustomScopeConfigurer customScopeConfigurer() {
+        CustomScopeConfigurer customScopeConfigurer = new CustomScopeConfigurer();
+        customScopeConfigurer.addScope("thread", new SimpleThreadScope());
+        return customScopeConfigurer;
+    }
+
     @Override
     public void run(String... args) throws Exception {
 
@@ -49,7 +64,7 @@ public class MyBarmanApp implements CommandLineRunner {
         * eg. bf = 0.8 => 8 / 1 - 0.8 = 8 * 2 = 16
         *  */
         log.info("available processors:"+Runtime.getRuntime().availableProcessors());
-        MyBarman myBarman = new MyBarman();
+//        MyBarman myBarman = new MyBarman();
         ExecutorService pool = Executors.newFixedThreadPool(2);
 
         /* max 4 active threads, and 2 tasks waiting in the queue. Should crash when 7 tasks are submitted */
