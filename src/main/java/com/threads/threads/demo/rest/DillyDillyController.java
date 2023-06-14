@@ -5,6 +5,7 @@ import com.threads.threads.demo.MyBarman;
 import com.threads.threads.demo.MyRequestContext;
 import com.threads.threads.demo.ThreadLocalHolder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 @RequestMapping("/dilly")
 @RequiredArgsConstructor
+@Slf4j
 public class DillyDillyController {
 
     private final MyBarman myBarman;
@@ -40,6 +42,8 @@ public class DillyDillyController {
         return myBarman.mixAsync();
         //this thread leaves to connection pool
     }
+
+
 
     String getRandomName() {
         Integer random = new Random().nextInt(0,4);

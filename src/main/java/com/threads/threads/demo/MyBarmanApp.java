@@ -2,7 +2,6 @@ package com.threads.threads.demo;
 
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.CustomScopeConfigurer;
@@ -78,6 +77,7 @@ public class MyBarmanApp implements CommandLineRunner {
         );
         ThreadPoolTaskExecutor threadPoolTaskExecutor = new ThreadPoolTaskExecutor();
         threadPoolTaskExecutor.setCorePoolSize(4);
+
         threadPoolTaskExecutor.setTaskDecorator(new TaskDecorator() {
             @Override
             public Runnable decorate(Runnable original) {
@@ -167,11 +167,6 @@ class MyTask implements Callable<Integer> {
         log.info(Thread.currentThread().getName()+"...doing the task");
         return 2;
     }
-}
-
-@Data
-class Beer {
-    private final String type = "beer";
 }
 
 @Data
